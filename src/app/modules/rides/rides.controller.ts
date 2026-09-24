@@ -38,3 +38,17 @@ export async function cancelRideHandler(req: Request, res: Response, next: NextF
     next(err);
   }
 }
+
+
+export async function getRideHistoryHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const history = await ridesService.getRideHistory(
+      req.params.id as string,
+      req.user!.id,
+      req.user!.role,
+    );
+    res.json({ history });
+  } catch (err) {
+    next(err);
+  }
+}

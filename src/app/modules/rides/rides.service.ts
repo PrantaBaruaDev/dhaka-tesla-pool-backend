@@ -166,3 +166,55 @@ export async function cancelRide(rideId: string, passengerId: string) {
   logger.info('rides', 'cancelled', { rideId, passengerId });
   return updated;
 }
+
+
+// History: full audit trail for a single ride 
+export async function getRideHistory(rideId: string, userId: string, role: string) {
+  const ride = await prisma.rideRequest.findUnique({
+    where: { id: rideId },
+    include: {
+      pickupZone: { select: { name: true } },
+      destinationZone: { select: { name: true } },
+    },
+  });
+
+  if (!ride) throw new ApiError(404, 'RIDE_NOT_FOUND', 'Ride does not exist.');
+
+  if (role === 'PASSENGER' && ride.passengerId !== userId) {
+    throw new ApiError(403, 'FORBIDDEN', 'You can only view history for your own rides.');
+  }
+
+  const timeline = await prisma.rideStatusHistory.findMany({
+    where: { rideRequestId: rideId },
+    include: {
+      changedByUser: { select: { id: true, name: true, role: true } },
+    },
+    orderBy: { changedAt: 'asc' },
+  });
+
+  return {
+    rideRequestId: ride.id,
+    currentStatus: ride.status,
+    pickupZone: ride.pickupZone.name,
+    destinationZone: ride.destinationZone.name,
+    seatsRequested: ride.seatsRequested,
+    roadDistanceMeters: ride.roadDistanceMeters,
+    estimatedFarePoysha: ride.estimatedFarePoysha,
+    finalFarePoysha: ride.finalFarePoysha,
+    requestedAt: ride.requestedAt,
+    matchedAt: ride.matchedAt,
+    completedAt: ride.completedAt,
+    cancelledAt: ride.cancelledAt,
+    timeline: timeline.map((t) => ({
+      id: t.id,
+      fromStatus: t.fromStatus,
+      toStatus: t.toStatus,
+      changedBy: {
+        id: t.changedByUser.id,
+        name: t.changedByUser.name,
+        role: t.changedByUser.role,
+      },
+      changedAt: t.changedAt,
+    })),
+  };
+}
