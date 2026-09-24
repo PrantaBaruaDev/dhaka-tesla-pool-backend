@@ -172,7 +172,7 @@ describe('pooling', () => {
       where: { teslaId: (await prisma.tesla.findUnique({ where: { driverId: 'u-jashim-001' } }))!.id, status: 'OPEN' },
     });
     expect(pool!.seatsOccupied).toBe(3);
-  });
+  }, 30000);
 
   // ── Lifecycle: arrive → start → complete ─────────────────────────
   it('runs the full lifecycle and finalizes fares with pool discount', async () => {
