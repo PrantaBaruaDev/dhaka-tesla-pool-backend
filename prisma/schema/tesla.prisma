@@ -1,0 +1,13 @@
+model Tesla {
+    id        String   @id @default(uuid())
+    driverId  String   @unique @map("driver_id")
+    label     String
+    capacity  Int
+    isOnline  Boolean  @default(false) @map("is_online")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    driver User   @relation(fields: [driverId], references: [id])
+    pools  Pool[]
+
+    @@map("teslas")
+}

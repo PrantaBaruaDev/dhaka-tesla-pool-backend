@@ -1,0 +1,13 @@
+model RideStatusHistory {
+    id            String   @id @default(uuid())
+    rideRequestId String   @map("ride_request_id")
+    fromStatus    String?  @map("from_status")
+    toStatus      String   @map("to_status")
+    changedBy     String   @map("changed_by")
+    changedAt     DateTime @default(now()) @map("changed_at")
+
+    rideRequest   RideRequest @relation(fields: [rideRequestId], references: [id])
+    changedByUser User        @relation("ChangedBy", fields: [changedBy], references: [id])
+
+    @@map("ride_status_history")
+}

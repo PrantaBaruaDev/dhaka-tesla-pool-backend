@@ -1,0 +1,14 @@
+model Pool {
+    id            String     @id @default(uuid())
+    teslaId       String     @map("tesla_id")
+    status        PoolStatus @default(OPEN)
+    seatsOccupied Int        @default(0) @map("seats_occupied")
+    startedAt     DateTime?  @map("started_at")
+    completedAt   DateTime?  @map("completed_at")
+    version       Int        @default(0)
+
+    tesla Tesla         @relation(fields: [teslaId], references: [id])
+    rides RideRequest[]
+
+    @@map("pools")
+}

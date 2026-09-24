@@ -1,0 +1,25 @@
+enum Role {
+    PASSENGER
+    DRIVER
+}
+
+enum RideStatus {
+    REQUESTED
+    MATCHED
+    DRIVER_ARRIVED
+    STARTED
+    COMPLETED
+    CANCELLED
+}
+
+enum PoolStatus {
+    OPEN
+    IN_PROGRESS
+    COMPLETED
+    CANCELLED
+}
+
+enum PaymentMethod {
+    CASH
+    TESLAPAY
+}

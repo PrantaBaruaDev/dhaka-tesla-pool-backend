@@ -1,0 +1,12 @@
+model Zone {
+    id      String @id
+    name    String @unique
+    lat     Float
+    lng     Float
+    cluster String
+
+    pickupRides      RideRequest[] @relation("PickupZone")
+    destinationRides RideRequest[] @relation("DestinationZone")
+
+    @@map("zones")
+}

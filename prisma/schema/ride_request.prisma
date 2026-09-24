@@ -1,0 +1,28 @@
+model RideRequest {
+    id                  String        @id @default(uuid())
+    passengerId         String        @map("passenger_id")
+    poolId              String?       @map("pool_id")
+    pickupZoneId        String        @map("pickup_zone_id")
+    destinationZoneId   String        @map("destination_zone_id")
+    seatsRequested      Int           @map("seats_requested")
+    status              RideStatus    @default(REQUESTED)
+    straightLineMeters  Int           @map("straight_line_meters")
+    roadDistanceMeters  Int           @map("road_distance_meters")
+    estimatedFarePoysha Int           @map("estimated_fare_poysha")
+    finalFarePoysha     Int?          @map("final_fare_poysha")
+    paymentMethod       PaymentMethod @default(CASH) @map("payment_method")
+    requestedAt         DateTime      @default(now()) @map("requested_at")
+    matchedAt           DateTime?     @map("matched_at")
+    completedAt         DateTime?     @map("completed_at")
+    cancelledAt         DateTime?     @map("cancelled_at")
+
+    passenger       User                @relation(fields: [passengerId], references: [id])
+    pool            Pool?               @relation(fields: [poolId], references: [id])
+    pickupZone      Zone                @relation("PickupZone", fields: [pickupZoneId], references: [id])
+    destinationZone Zone                @relation("DestinationZone", fields: [destinationZoneId], references: [id])
+    statusHistory   RideStatusHistory[]
+
+    @@index([status, pickupZoneId])
+    @@index([passengerId])
+    @@map("ride_requests")
+}
