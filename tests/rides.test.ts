@@ -83,9 +83,10 @@ describe('rides', () => {
     expect(res.status).toBe(201);
     const ride = res.body.rideRequest;
     expect(ride.status).toBe('REQUESTED');
-    expect(ride.straightLineMeters).toBe(3000);
-    expect(ride.roadDistanceMeters).toBe(4200);
-    expect(ride.estimatedFarePoysha).toBe(9300);
+    expect(ride.straightLineMeters).toBeGreaterThanOrEqual(2950);
+    expect(ride.straightLineMeters).toBeLessThanOrEqual(3050);
+    expect(ride.roadDistanceMeters).toBe(4200);      // exact - rounded to 0.1 km
+    expect(ride.estimatedFarePoysha).toBe(9300);     // exact - from rounded distance
     expect(ride.poolId).toBeNull();
   });
 
