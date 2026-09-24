@@ -8,6 +8,7 @@ import "./app/lib/passport";
 import { authRouter } from './app/modules/auth/auth.routes';
 import { zonesRouter } from './app/modules/zones/zones.routes';
 import { requestLogger } from './middleware/request-logger';
+import { ridesRouter } from './app/modules/rides/rides.routes';
 
 const app: Application = express();
 // app.use(helmet());
@@ -36,6 +37,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/zones', zonesRouter);
+app.use('/api/v1/rides', ridesRouter);
 
 app.use(errorHandler);
 
