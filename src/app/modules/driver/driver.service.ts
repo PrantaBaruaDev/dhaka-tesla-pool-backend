@@ -577,3 +577,61 @@ export async function getPoolHistory(driverId: string) {
     })),
   }));
 }
+
+
+// Audit: full timeline for every ride in a single pool 
+export async function getPoolAudit(driverId: string, poolId: string) {
+  const tesla = await getDriverTesla(driverId);
+
+  const pool = await prisma.pool.findUnique({
+    where: { id: poolId },
+    include: {
+      rides: {
+        include: {
+          passenger: { select: { id: true, name: true } },
+          pickupZone: { select: { name: true } },
+          destinationZone: { select: { name: true } },
+          statusHistory: {
+            include: {
+              changedByUser: { select: { id: true, name: true, role: true } },
+            },
+            orderBy: { changedAt: 'asc' },
+          },
+        },
+      },
+    },
+  });
+
+  if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
+  if (pool.teslaId !== tesla.id) {
+    throw new ApiError(403, 'FORBIDDEN', 'This pool does not belong to your Tesla.');
+  }
+
+  return {
+    poolId: pool.id,
+    status: pool.status,
+    seatsOccupied: pool.seatsOccupied,
+    startedAt: pool.startedAt,
+    completedAt: pool.completedAt,
+    rides: pool.rides.map((r) => ({
+      rideRequestId: r.id,
+      passenger: { id: r.passenger.id, name: r.passenger.name },
+      pickupZone: r.pickupZone.name,
+      destinationZone: r.destinationZone.name,
+      currentStatus: r.status,
+      estimatedFarePoysha: r.estimatedFarePoysha,
+      finalFarePoysha: r.finalFarePoysha,
+      timeline: r.statusHistory.map((t) => ({
+        id: t.id,
+        fromStatus: t.fromStatus,
+        toStatus: t.toStatus,
+        changedBy: {
+          id: t.changedByUser.id,
+          name: t.changedByUser.name,
+          role: t.changedByUser.role,
+        },
+        changedAt: t.changedAt,
+      })),
+    })),
+  };
+}

@@ -80,3 +80,12 @@ export async function poolHistoryHandler(req: Request, res: Response, next: Next
     next(err);
   }
 }
+
+export async function poolAuditHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const audit = await driverService.getPoolAudit(req.user!.id, req.params.id as string);
+    res.json({ audit });
+  } catch (err) {
+    next(err);
+  }
+}
