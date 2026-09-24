@@ -1,9 +1,6 @@
-// import { PrismaClient, Role } from '@prisma/client';
 import { Role } from '@/generated/prisma/enums';
-import { PrismaClient } from '@prisma/client/extension';
 import bcrypt from 'bcryptjs';
-
-const prisma = new PrismaClient();
+import { prisma } from "@/app/lib/prisma";
 
 const ZONES = [
   { id: 'z-banani',      name: 'Banani',      lat: 23.7936, lng: 90.4043, cluster: 'banani-corridor' },
