@@ -173,9 +173,9 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // 1. Claim the ride atomically 
+        // Claim the ride atomically 
         // This is the crux: only ONE transaction can transition a ride
-        // from REQUESTED → MATCHED, because updateMany's WHERE clause
+        // from REQUESTED -> MATCHED, because updateMany's WHERE clause
         // is evaluated atomically at the DB level.
         const ride = await tx.rideRequest.findUnique({
           where: { id: rideRequestId },
@@ -190,13 +190,13 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           throw new ApiError(409, 'INVALID_TRANSITION', `Ride is already ${ride.status}.`);
         }
 
-        // ── 2. Find this Tesla's active pool ────────────────────────
+        // Find this Tesla's active pool 
         const activePool = await tx.pool.findFirst({
           where: { teslaId: tesla.id, status: 'OPEN' },
           orderBy: { id: 'desc' },
         });
 
-        // ── Case A: no active pool → create one ─────────────────────
+        // no active pool -> create one
         if (!activePool) {
           // Claim the ride FIRST, before creating the pool.
           // If someone else already claimed it, count === 0 and we abort.
@@ -242,7 +242,7 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           return { pool: newPool, ride: { ...ride, poolId: newPool.id, status: 'MATCHED' }, created: true };
         }
 
-        // ── Case B: join existing pool ──────────────────────────────
+        // join existing pool 
         // Capacity check (read-time, re-checked atomically on update)
         if (activePool.seatsOccupied + ride.seatsRequested > tesla.capacity) {
           logger.warn('pool', 'POOL_FULL rejection', {
@@ -279,13 +279,13 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           }
         }
 
-        // ── 3. Atomically increment the pool, guarded by version ────
+        // Atomically increment the pool, guarded by version 
         // If another transaction already incremented the version, this
         // update matches 0 rows and we retry the whole transaction.
         const poolUpdate = await tx.pool.updateMany({
           where: {
             id: activePool.id,
-            version: activePool.version,   // ← optimistic lock
+            version: activePool.version,   // optimistic lock
             status: 'OPEN',
           },
           data: {
@@ -299,7 +299,7 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           throw new ApiError(409, 'RETRY_NEEDED', 'Pool state changed, retry.');
         }
 
-        // ── 4. Claim the ride (only if still REQUESTED) ─────────────
+        // Claim the ride (only if still REQUESTED) 
         const claimed = await tx.rideRequest.updateMany({
           where: { id: rideRequestId, status: 'REQUESTED' },
           data: { status: 'MATCHED', poolId: activePool.id, matchedAt: new Date() },
@@ -351,4 +351,229 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
   }
 
   throw new ApiError(503, 'TOO_MANY_RETRIES', 'Pool contention too high, try again.');
+}
+
+
+// Mark DRIVER_ARRIVED for every ride in the pool 
+export async function markArrived(driverId: string, poolId: string) {
+  const tesla = await getDriverTesla(driverId);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const pool = await tx.pool.findUnique({
+      where: { id: poolId },
+      include: { rides: true },
+    });
+
+    if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
+    if (pool.teslaId !== tesla.id) {
+      throw new ApiError(403, 'FORBIDDEN', 'This pool does not belong to your Tesla.');
+    }
+    if (pool.status !== 'OPEN') {
+      throw new ApiError(409, 'INVALID_TRANSITION', `Pool is ${pool.status}.`);
+    }
+
+    const updated: Array<{ id: string; status: string }> = [];
+
+    for (const ride of pool.rides) {
+      if (ride.status !== 'MATCHED') continue;
+      const r = await tx.rideRequest.update({
+        where: { id: ride.id },
+        data: { status: 'DRIVER_ARRIVED' },
+        select: { id: true, status: true },
+      });
+      await tx.rideStatusHistory.create({
+        data: {
+          rideRequestId: ride.id,
+          fromStatus: 'MATCHED',
+          toStatus: 'DRIVER_ARRIVED',
+          changedBy: driverId,
+        },
+      });
+      updated.push(r);
+    }
+
+    logger.info('pool', 'marked arrived', { poolId, rides: updated.length });
+    return { pool: { id: pool.id, status: pool.status, seatsOccupied: pool.seatsOccupied }, updatedRides: updated };
+  });
+
+  return result;
+}
+
+// Start the trip: OPEN → IN_PROGRESS 
+export async function startPool(driverId: string, poolId: string) {
+  const tesla = await getDriverTesla(driverId);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const pool = await tx.pool.findUnique({
+      where: { id: poolId },
+      include: { rides: true },
+    });
+
+    if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
+    if (pool.teslaId !== tesla.id) {
+      throw new ApiError(403, 'FORBIDDEN', 'This pool does not belong to your Tesla.');
+    }
+    if (pool.status !== 'OPEN') {
+      throw new ApiError(409, 'INVALID_TRANSITION', `Pool is ${pool.status}.`);
+    }
+
+    // All rides must be DRIVER_ARRIVED
+    const notArrived = pool.rides.filter((r) => r.status !== 'DRIVER_ARRIVED');
+    if (notArrived.length > 0) {
+      throw new ApiError(
+        409,
+        'INVALID_TRANSITION',
+        'All passengers must be DRIVER_ARRIVED before starting the trip.',
+        { pendingRideIds: notArrived.map((r) => r.id) },
+      );
+    }
+
+    const updatedPool = await tx.pool.update({
+      where: { id: pool.id },
+      data: { status: 'IN_PROGRESS', startedAt: new Date() },
+    });
+
+    const updated: Array<{ id: string; status: string }> = [];
+    for (const ride of pool.rides) {
+      const r = await tx.rideRequest.update({
+        where: { id: ride.id },
+        data: { status: 'STARTED' },
+        select: { id: true, status: true },
+      });
+      await tx.rideStatusHistory.create({
+        data: {
+          rideRequestId: ride.id,
+          fromStatus: 'DRIVER_ARRIVED',
+          toStatus: 'STARTED',
+          changedBy: driverId,
+        },
+      });
+      updated.push(r);
+    }
+
+    logger.info('pool', 'started', { poolId, rides: updated.length });
+    return { pool: updatedPool, updatedRides: updated };
+  });
+
+  return result;
+}
+
+// Complete trip: IN_PROGRESS → COMPLETED, compute final fares 
+export async function completePool(driverId: string, poolId: string) {
+  const tesla = await getDriverTesla(driverId);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const pool = await tx.pool.findUnique({
+      where: { id: poolId },
+      include: { rides: true },
+    });
+
+    if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
+    if (pool.teslaId !== tesla.id) {
+      throw new ApiError(403, 'FORBIDDEN', 'This pool does not belong to your Tesla.');
+    }
+    if (pool.status !== 'IN_PROGRESS') {
+      throw new ApiError(409, 'INVALID_TRANSITION', `Pool is ${pool.status}.`);
+    }
+
+    const isPooled = pool.seatsOccupied > 1;
+
+    const updatedPool = await tx.pool.update({
+      where: { id: pool.id },
+      data: { status: 'COMPLETED', completedAt: new Date() },
+    });
+
+    const finalized: Array<{
+      id: string;
+      passengerId: string;
+      roadDistanceMeters: number;
+      baseFarePoysha: number;
+      discountPoysha: number;
+      finalFarePoysha: number;
+    }> = [];
+
+    for (const ride of pool.rides) {
+      if (ride.status !== 'STARTED') continue;
+
+      const { basePoysha, discountPoysha, finalPoysha } = fareFromRoadDistance(
+        ride.roadDistanceMeters,
+        isPooled,
+      );
+
+      await tx.rideRequest.update({
+        where: { id: ride.id },
+        data: {
+          status: 'COMPLETED',
+          finalFarePoysha: finalPoysha,
+          completedAt: new Date(),
+        },
+      });
+
+      await tx.rideStatusHistory.create({
+        data: {
+          rideRequestId: ride.id,
+          fromStatus: 'STARTED',
+          toStatus: 'COMPLETED',
+          changedBy: driverId,
+        },
+      });
+
+      finalized.push({
+        id: ride.id,
+        passengerId: ride.passengerId,
+        roadDistanceMeters: ride.roadDistanceMeters,
+        baseFarePoysha: basePoysha,
+        discountPoysha,
+        finalFarePoysha: finalPoysha,
+      });
+    }
+
+    logger.info('pool', 'completed', {
+      poolId,
+      isPooled,
+      rides: finalized.length,
+    });
+
+    return { pool: updatedPool, rides: finalized };
+  });
+
+  return result;
+}
+
+// History: past pools for this driver's Tesla 
+export async function getPoolHistory(driverId: string) {
+  const tesla = await getDriverTesla(driverId);
+
+  const pools = await prisma.pool.findMany({
+    where: {
+      teslaId: tesla.id,
+      status: { in: ['COMPLETED', 'CANCELLED'] },
+    },
+    include: {
+      rides: {
+        include: {
+          passenger: { select: { id: true, name: true } },
+          pickupZone: { select: { name: true } },
+          destinationZone: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: { completedAt: 'desc' },
+  });
+
+  return pools.map((p) => ({
+    id: p.id,
+    status: p.status,
+    seatsOccupied: p.seatsOccupied,
+    startedAt: p.startedAt,
+    completedAt: p.completedAt,
+    passengers: p.rides.map((r) => ({
+      rideRequestId: r.id,
+      passengerName: r.passenger.name,
+      status: r.status,
+      pickupZone: r.pickupZone.name,
+      destinationZone: r.destinationZone.name,
+      finalFarePoysha: r.finalFarePoysha,
+    })),
+  }));
 }
