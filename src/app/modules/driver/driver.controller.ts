@@ -29,3 +29,54 @@ export async function getActivePoolHandler(req: Request, res: Response, next: Ne
     next(err);
   }
 }
+
+
+
+export async function acceptRequestHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await driverService.acceptRequest(req.user!.id, req.params.id as string);
+    res.json({
+      pool: result.pool,
+      rideRequest: result.ride,
+      created: result.created,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function arriveHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await driverService.markArrived(req.user!.id, req.params.id as string);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function startHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await driverService.startPool(req.user!.id, req.params.id as string);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function completeHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await driverService.completePool(req.user!.id, req.params.id as string);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function poolHistoryHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const pools = await driverService.getPoolHistory(req.user!.id);
+    res.json({ pools });
+  } catch (err) {
+    next(err);
+  }
+}
