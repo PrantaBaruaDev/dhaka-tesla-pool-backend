@@ -29,7 +29,7 @@
     "db:generate": "bunx prisma generate",
     "db:migrate": "bunx prisma migrate dev",
     "db:reset": "bunx prisma migrate reset --force",
-    "db:seed": "bun run prisma/seed.ts",
+    "db:seed": "bun run src/seeds/seeds.ts",
     "db:studio": "bunx prisma studio",
     "format:check": "npx @biomejs/biome format ./src",
     "format:fix": "npx @biomejs/biome format --write ./src",
