@@ -7,7 +7,7 @@ async function loginAs(email: string, password: string): Promise<string> {
     .post('/api/v1/auth/login')
     .send({ email, password });
   const cookies = res.headers['set-cookie'];
-  if (!cookies) throw new Error(`Login failed for ${email}: ${res.status} ${JSON.stringify(res.body)}`);
+  if (!cookies) throw new Error(`Login failed for ${email}: ${res.status}`);
   return Array.isArray(cookies) ? cookies[0] : cookies;
 }
 
@@ -21,11 +21,12 @@ describe('rides', () => {
   const GULSHAN1 = 'z-gulshan1';
 
   beforeAll(async () => {
-    nusratCookie  = await loginAs('nusrat@example.com', 'password123');
-    rafiqCookie   = await loginAs('rafiq@example.com',  'password123');
-    jashimCookie  = await loginAs('jashim@tesla.dhaka', 'password123');
+    nusratCookie = await loginAs('nusrat@example.com', 'password123');
+    rafiqCookie  = await loginAs('rafiq@example.com', 'password123');
+    jashimCookie = await loginAs('jashim@tesla.dhaka', 'password123');
   });
 
+  // Create
   it('rejects a client-supplied distanceMeters (Zod strict)', async () => {
     const res = await request(app)
       .post('/api/v1/rides')
@@ -45,12 +46,7 @@ describe('rides', () => {
     const res = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', nusratCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: BANANI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: BANANI, seats: 1, paymentMethod: 'CASH' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('SAME_ZONE');
   });
@@ -73,20 +69,15 @@ describe('rides', () => {
     const res = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', nusratCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: MOHAKHALI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1, paymentMethod: 'CASH' });
 
     expect(res.status).toBe(201);
     const ride = res.body.rideRequest;
     expect(ride.status).toBe('REQUESTED');
     expect(ride.straightLineMeters).toBeGreaterThanOrEqual(2950);
     expect(ride.straightLineMeters).toBeLessThanOrEqual(3050);
-    expect(ride.roadDistanceMeters).toBe(4200);      // exact - rounded to 0.1 km
-    expect(ride.estimatedFarePoysha).toBe(9300);     // exact - from rounded distance
+    expect(ride.roadDistanceMeters).toBe(4200);
+    expect(ride.estimatedFarePoysha).toBe(9300);
     expect(ride.poolId).toBeNull();
   });
 
@@ -94,26 +85,17 @@ describe('rides', () => {
     const res = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', rafiqCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: GULSHAN1,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: GULSHAN1, seats: 1, paymentMethod: 'CASH' });
     expect(res.status).toBe(201);
     expect(res.body.rideRequest.estimatedFarePoysha).toBe(8250);
   });
 
-  it('a passenger cannot read another passenger\'s ride', async () => {
+  //  Ownership 
+  it("a passenger cannot read another passenger's ride", async () => {
     const create = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', nusratCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: MOHAKHALI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1, paymentMethod: 'CASH' });
     const rideId = create.body.rideRequest.id;
 
     const read = await request(app)
@@ -122,16 +104,11 @@ describe('rides', () => {
     expect(read.status).toBe(403);
   });
 
-  it('a passenger cannot cancel another passenger\'s ride', async () => {
+  it("a passenger cannot cancel another passenger's ride", async () => {
     const create = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', nusratCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: MOHAKHALI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1, paymentMethod: 'CASH' });
     const rideId = create.body.rideRequest.id;
 
     const cancel = await request(app)
@@ -144,12 +121,7 @@ describe('rides', () => {
     const create = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', nusratCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: MOHAKHALI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1, paymentMethod: 'CASH' });
     const rideId = create.body.rideRequest.id;
 
     const cancel = await request(app)
@@ -160,28 +132,48 @@ describe('rides', () => {
     expect(cancel.body.rideRequest.cancelledAt).toBeTruthy();
   });
 
+  //  Access control 
   it('a driver cannot use passenger ride endpoints', async () => {
     const res = await request(app)
       .post('/api/v1/rides')
       .set('Cookie', jashimCookie)
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: MOHAKHALI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1, paymentMethod: 'CASH' });
     expect(res.status).toBe(403);
   });
 
   it('unauthenticated request returns 401', async () => {
     const res = await request(app)
       .post('/api/v1/rides')
-      .send({
-        pickupZoneId: BANANI,
-        destinationZoneId: MOHAKHALI,
-        seats: 1,
-        paymentMethod: 'CASH',
-      });
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1, paymentMethod: 'CASH' });
     expect(res.status).toBe(401);
+  });
+
+  //  Preview
+  it('previews a fare without creating a ride', async () => {
+    const res = await request(app)
+      .post('/api/v1/rides/preview')
+      .set('Cookie', nusratCookie)
+      .send({ pickupZoneId: BANANI, destinationZoneId: MOHAKHALI, seats: 1 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.preview.roadDistanceMeters).toBe(4200);
+    expect(res.body.preview.estimatedFarePoysha).toBe(9300);
+  });
+
+  it('preview rejects unknown zone', async () => {
+    const res = await request(app)
+      .post('/api/v1/rides/preview')
+      .set('Cookie', nusratCookie)
+      .send({ pickupZoneId: 'z-nope', destinationZoneId: MOHAKHALI, seats: 1 });
+    expect(res.status).toBe(404);
+  });
+
+  it('preview rejects same zone', async () => {
+    const res = await request(app)
+      .post('/api/v1/rides/preview')
+      .set('Cookie', nusratCookie)
+      .send({ pickupZoneId: BANANI, destinationZoneId: BANANI, seats: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('SAME_ZONE');
   });
 });
