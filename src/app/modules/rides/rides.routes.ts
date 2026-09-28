@@ -7,7 +7,7 @@ import {
   cancelRideHandler,
   getRideHistoryHandler,
 } from './rides.controller';
-import { Role } from '@/generated/prisma/enums';
+import { Role } from '@/../prisma/generated/prisma/enums';
 
 export const ridesRouter = Router();
 
