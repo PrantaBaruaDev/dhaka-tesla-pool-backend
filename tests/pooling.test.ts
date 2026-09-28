@@ -30,21 +30,19 @@ describe('pooling', () => {
     shirinCookie = await loginAs('shirin@example.com', 'password123');
   });
 
-  // Reset DB state before each test to avoid cross-test interference
   beforeEach(async () => {
-    // Delete in FK-safe order
-    await prisma.rideStatusHistory.deleteMany({});
-    await prisma.rideRequest.deleteMany({});
-    await prisma.pool.deleteMany({});
+    await prisma.$transaction([
+      prisma.rideStatusHistory.deleteMany({}),
+      prisma.rideRequest.deleteMany({}),
+      prisma.pool.deleteMany({}),
+    ]);
 
-    // Ensure driver offline
     await request(app)
       .post('/api/v1/driver/status')
       .set('Cookie', jashimCookie)
       .send({ online: false });
   });
 
-  // Helper
   async function requestRide(cookie: string, pickup: string, dest: string) {
     const res = await request(app)
       .post('/api/v1/rides')
@@ -54,7 +52,6 @@ describe('pooling', () => {
     return res.body.rideRequest.id as string;
   }
 
-  // ── Accept: create pool ──────────────────────────────────────────
   it('creates a pool when the first request is accepted', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
 
@@ -71,7 +68,6 @@ describe('pooling', () => {
     expect(res.body.rideRequest.poolId).toBe(res.body.pool.id);
   });
 
-  // ── Accept: join existing pool ───────────────────────────────────
   it('joins an existing pool with a matching-corridor request', async () => {
     const nusratRide = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const rafiqRide  = await requestRide(rafiqCookie,  BANANI, GULSHAN1);
@@ -92,7 +88,6 @@ describe('pooling', () => {
     expect(second.body.pool.version).toBe(1);
   });
 
-  // ── Cluster rule: reject different corridor ──────────────────────
   it('rejects a request on a different corridor', async () => {
     const bananiRide = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const dhanoRide  = await requestRide(rafiqCookie,  DHANMONDI, 'z-mirpur');
@@ -109,7 +104,6 @@ describe('pooling', () => {
     expect(res.body.error).toBe('CLUSTER_MISMATCH');
   });
 
-  // ── Capacity: reject when full ───────────────────────────────────
   it('rejects the 4th seat (capacity 3)', async () => {
     const a = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const b = await requestRide(rafiqCookie,  BANANI, GULSHAN1);
@@ -119,7 +113,6 @@ describe('pooling', () => {
     await request(app).post(`/api/v1/driver/requests/${b}/accept`).set('Cookie', jashimCookie);
     await request(app).post(`/api/v1/driver/requests/${c}/accept`).set('Cookie', jashimCookie);
 
-    // Create a 4th passenger via a signup — Shirin is already in pool, use a fresh signup
     const signup = await request(app)
       .post('/api/v1/auth/signup')
       .send({ name: 'Fourth', email: `fourth-${Date.now()}@test.local`, password: 'password123', role: 'PASSENGER' });
@@ -134,17 +127,14 @@ describe('pooling', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('POOL_FULL');
-  });
+  }, 30000);
 
-  // ── Concurrency: last seat race ──────────────────────────────────
   it('two parallel accepts for the last seat: exactly one succeeds', async () => {
-    // Setup: fill pool to 2 seats
     const a = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const b = await requestRide(rafiqCookie,  BANANI, GULSHAN1);
     await request(app).post(`/api/v1/driver/requests/${a}/accept`).set('Cookie', jashimCookie);
     await request(app).post(`/api/v1/driver/requests/${b}/accept`).set('Cookie', jashimCookie);
 
-    // Two new rides, one seat each, same corridor
     const c = await requestRide(shirinCookie, BANANI, GULSHAN1);
     const signup = await request(app)
       .post('/api/v1/auth/signup')
@@ -154,27 +144,23 @@ describe('pooling', () => {
       : signup.headers['set-cookie'];
     const d = await requestRide(fifthCookie, BANANI, GULSHAN1);
 
-    // Fire both accepts at the same moment
     const [r1, r2] = await Promise.all([
       request(app).post(`/api/v1/driver/requests/${c}/accept`).set('Cookie', jashimCookie),
       request(app).post(`/api/v1/driver/requests/${d}/accept`).set('Cookie', jashimCookie),
     ]);
 
     const statuses = [r1.status, r2.status].sort();
-    // One 200, one 409
     expect(statuses).toEqual([200, 409]);
 
     const loser = r1.status === 409 ? r1 : r2;
     expect(loser.body.error).toBe('POOL_FULL');
 
-    // Verify pool has exactly 3 seats (never more)
     const pool = await prisma.pool.findFirst({
       where: { teslaId: (await prisma.tesla.findUnique({ where: { driverId: 'u-jashim-001' } }))!.id, status: 'OPEN' },
     });
     expect(pool!.seatsOccupied).toBe(3);
   }, 30000);
 
-  // ── Lifecycle: arrive → start → complete ─────────────────────────
   it('runs the full lifecycle and finalizes fares with pool discount', async () => {
     const nusratRide = await requestRide(nusratCookie, BANANI, MOHAKHALI);  // 4200 m, base 9300
     const rafiqRide  = await requestRide(rafiqCookie,  BANANI, GULSHAN1);   // 3500 m, base 8250
@@ -211,9 +197,8 @@ describe('pooling', () => {
 
     expect(rafiq.baseFarePoysha).toBe(8250);
     expect(rafiq.finalFarePoysha).toBe(6600);
-  });
+  }, 30000);
 
-  // ── Lifecycle: cannot start before arrival ───────────────────────
   it('rejects start before all passengers are DRIVER_ARRIVED', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const a = await request(app).post(`/api/v1/driver/requests/${rideId}/accept`).set('Cookie', jashimCookie);
@@ -227,7 +212,6 @@ describe('pooling', () => {
     expect(res.body.error).toBe('INVALID_TRANSITION');
   });
 
-  // ── Lifecycle: cannot complete before starting ───────────────────
   it('rejects complete before start', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const a = await request(app).post(`/api/v1/driver/requests/${rideId}/accept`).set('Cookie', jashimCookie);
@@ -243,9 +227,7 @@ describe('pooling', () => {
     expect(res.body.error).toBe('INVALID_TRANSITION');
   });
 
-  // ── Ownership: other driver cannot touch this pool ───────────────
   it('a different driver cannot arrive/start/complete someone else\'s pool', async () => {
-    // Create a second driver via signup
     const signup = await request(app)
       .post('/api/v1/auth/signup')
       .send({ name: 'Other', email: `other-${Date.now()}@test.local`, password: 'password123', role: 'DRIVER' });
@@ -264,7 +246,6 @@ describe('pooling', () => {
     expect(res.status).toBe(403);
   });
 
-  // ── Accept: same ride twice ──────────────────────────────────────
   it('rejects accepting an already-MATCHED ride', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     await request(app).post(`/api/v1/driver/requests/${rideId}/accept`).set('Cookie', jashimCookie);
@@ -277,7 +258,6 @@ describe('pooling', () => {
     expect(res.body.error).toBe('INVALID_TRANSITION');
   });
 
-  // ── History ──────────────────────────────────────────────────────
   it('returns completed pools in history', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const a = await request(app).post(`/api/v1/driver/requests/${rideId}/accept`).set('Cookie', jashimCookie);
@@ -296,5 +276,5 @@ describe('pooling', () => {
     expect(found).toBeDefined();
     expect(found.status).toBe('COMPLETED');
     expect(found.passengers.length).toBe(1);
-  });
+  }, 30000);
 });

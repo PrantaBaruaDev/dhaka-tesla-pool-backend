@@ -4,7 +4,6 @@ import { logger } from '../../lib/logger';
 import type { ToggleStatusInput } from './driver.schema';
 import { fareFromRoadDistance } from '../fares/fare.service';
 
-// ── Helper: fetch this driver's Tesla (throws if missing) ────────────
 export async function getDriverTesla(driverId: string) {
   const tesla = await prisma.tesla.findUnique({ where: { driverId } });
   if (!tesla) {
@@ -13,7 +12,6 @@ export async function getDriverTesla(driverId: string) {
   return tesla;
 }
 
-// ── Toggle online / offline ─────────────────────────────────────────
 export async function setOnlineStatus(driverId: string, input: ToggleStatusInput) {
   const tesla = await getDriverTesla(driverId);
 
@@ -37,7 +35,6 @@ export async function setOnlineStatus(driverId: string, input: ToggleStatusInput
   return updated;
 }
 
-// ── Fetch the driver's current active pool (OPEN or IN_PROGRESS) ─────
 export async function getActivePool(driverId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -81,7 +78,6 @@ export async function getActivePool(driverId: string) {
   };
 }
 
-// ── List open requests that match this driver ───────────────────────
 export async function getMatchingRequests(driverId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -110,7 +106,6 @@ export async function getMatchingRequests(driverId: string) {
     orderBy: { requestedAt: 'asc' },
   });
 
-  // Determine the pool's cluster signature (if a pool is active)
   let poolPickupCluster: string | null = null;
   let poolDestCluster: string | null = null;
 
@@ -121,8 +116,6 @@ export async function getMatchingRequests(driverId: string) {
   }
 
   const requests = openRequests.map((r) => {
-    // A request is compatible with the active pool if clusters match
-    // and the pool has enough remaining capacity.
     let canJoinActivePool = false;
 
     if (activePool && poolPickupCluster && poolDestCluster) {
@@ -162,7 +155,6 @@ export async function getMatchingRequests(driverId: string) {
   };
 }
 
-// Accept a REQUESTED ride → create or join a pool 
 export async function acceptRequest(driverId: string, rideRequestId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -173,10 +165,6 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const result = await prisma.$transaction(async (tx) => {
-        // Claim the ride atomically 
-        // This is the crux: only ONE transaction can transition a ride
-        // from REQUESTED -> MATCHED, because updateMany's WHERE clause
-        // is evaluated atomically at the DB level.
         const ride = await tx.rideRequest.findUnique({
           where: { id: rideRequestId },
           include: {
@@ -190,16 +178,12 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           throw new ApiError(409, 'INVALID_TRANSITION', `Ride is already ${ride.status}.`);
         }
 
-        // Find this Tesla's active pool 
         const activePool = await tx.pool.findFirst({
           where: { teslaId: tesla.id, status: 'OPEN' },
           orderBy: { id: 'desc' },
         });
 
-        // no active pool -> create one
         if (!activePool) {
-          // Claim the ride FIRST, before creating the pool.
-          // If someone else already claimed it, count === 0 and we abort.
           const claimed = await tx.rideRequest.updateMany({
             where: { id: rideRequestId, status: 'REQUESTED' },
             data: { status: 'MATCHED', matchedAt: new Date() },
@@ -208,16 +192,28 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
             throw new ApiError(409, 'INVALID_TRANSITION', 'Ride was claimed by another driver.');
           }
 
-          const newPool = await tx.pool.create({
-            data: {
-              teslaId: tesla.id,
-              status: 'OPEN',
-              seatsOccupied: ride.seatsRequested,
-              version: 0,
-            },
-          });
+          let newPool;
+          try {
+            newPool = await tx.pool.create({
+              data: {
+                teslaId: tesla.id,
+                status: 'OPEN',
+                seatsOccupied: ride.seatsRequested,
+                version: 0,
+              },
+            });
+          } catch (err) {
+            if (
+              err &&
+              typeof err === 'object' &&
+              'code' in err &&
+              (err as { code: string }).code === 'P2002'
+            ) {
+              throw new ApiError(409, 'RETRY_NEEDED', 'Concurrent pool creation, retry.');
+            }
+            throw err;
+          }
 
-          // Now attach the pool
           await tx.rideRequest.update({
             where: { id: rideRequestId },
             data: { poolId: newPool.id },
@@ -239,11 +235,13 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
             attempt,
           });
 
-          return { pool: newPool, ride: { ...ride, poolId: newPool.id, status: 'MATCHED' }, created: true };
+          return {
+            pool: newPool,
+            ride: { ...ride, poolId: newPool.id, status: 'MATCHED' },
+            created: true,
+          };
         }
 
-        // join existing pool 
-        // Capacity check (read-time, re-checked atomically on update)
         if (activePool.seatsOccupied + ride.seatsRequested > tesla.capacity) {
           logger.warn('pool', 'POOL_FULL rejection', {
             poolId: activePool.id,
@@ -258,7 +256,6 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           });
         }
 
-        // Cluster matching rule
         const poolFirstRide = await tx.rideRequest.findFirst({
           where: { poolId: activePool.id },
           include: {
@@ -279,13 +276,10 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
           }
         }
 
-        // Atomically increment the pool, guarded by version 
-        // If another transaction already incremented the version, this
-        // update matches 0 rows and we retry the whole transaction.
         const poolUpdate = await tx.pool.updateMany({
           where: {
             id: activePool.id,
-            version: activePool.version,   // optimistic lock
+            version: activePool.version,
             status: 'OPEN',
           },
           data: {
@@ -295,19 +289,15 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
         });
 
         if (poolUpdate.count === 0) {
-          // Version changed or pool is no longer OPEN → retry
           throw new ApiError(409, 'RETRY_NEEDED', 'Pool state changed, retry.');
         }
 
-        // Claim the ride (only if still REQUESTED) 
         const claimed = await tx.rideRequest.updateMany({
           where: { id: rideRequestId, status: 'REQUESTED' },
           data: { status: 'MATCHED', poolId: activePool.id, matchedAt: new Date() },
         });
 
         if (claimed.count === 0) {
-          // Ride was claimed by someone else — abort the whole transaction,
-          // the pool increment will roll back too.
           throw new ApiError(409, 'INVALID_TRANSITION', 'Ride was claimed by another driver.');
         }
 
@@ -341,7 +331,6 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
 
       return result;
     } catch (err) {
-      // Only retry on our explicit retry signal, not on capacity or cluster errors
       if (err instanceof ApiError && err.code === 'RETRY_NEEDED' && attempt < MAX_RETRIES) {
         logger.debug('pool', `optimistic lock retry ${attempt}/${MAX_RETRIES}`);
         continue;
@@ -353,8 +342,6 @@ export async function acceptRequest(driverId: string, rideRequestId: string) {
   throw new ApiError(503, 'TOO_MANY_RETRIES', 'Pool contention too high, try again.');
 }
 
-
-// Mark DRIVER_ARRIVED for every ride in the pool 
 export async function markArrived(driverId: string, poolId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -399,7 +386,6 @@ export async function markArrived(driverId: string, poolId: string) {
   return result;
 }
 
-// Start the trip: OPEN → IN_PROGRESS 
 export async function startPool(driverId: string, poolId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -417,7 +403,6 @@ export async function startPool(driverId: string, poolId: string) {
       throw new ApiError(409, 'INVALID_TRANSITION', `Pool is ${pool.status}.`);
     }
 
-    // All rides must be DRIVER_ARRIVED
     const notArrived = pool.rides.filter((r) => r.status !== 'DRIVER_ARRIVED');
     if (notArrived.length > 0) {
       throw new ApiError(
@@ -458,7 +443,6 @@ export async function startPool(driverId: string, poolId: string) {
   return result;
 }
 
-// Complete trip: IN_PROGRESS → COMPLETED, compute final fares 
 export async function completePool(driverId: string, poolId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -540,7 +524,6 @@ export async function completePool(driverId: string, poolId: string) {
   return result;
 }
 
-// History: past pools for this driver's Tesla 
 export async function getPoolHistory(driverId: string) {
   const tesla = await getDriverTesla(driverId);
 
@@ -578,8 +561,6 @@ export async function getPoolHistory(driverId: string) {
   }));
 }
 
-
-// Audit: full timeline for every ride in a single pool 
 export async function getPoolAudit(driverId: string, poolId: string) {
   const tesla = await getDriverTesla(driverId);
 

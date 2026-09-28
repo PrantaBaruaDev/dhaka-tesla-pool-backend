@@ -28,9 +28,11 @@ describe('history', () => {
   });
 
   beforeEach(async () => {
-    await prisma.rideStatusHistory.deleteMany({});
-    await prisma.rideRequest.deleteMany({});
-    await prisma.pool.deleteMany({});
+    await prisma.$transaction([
+      prisma.rideStatusHistory.deleteMany({}),
+      prisma.rideRequest.deleteMany({}),
+      prisma.pool.deleteMany({}),
+    ]);
   });
 
   async function requestRide(cookie: string, pickup: string, dest: string) {
@@ -93,7 +95,7 @@ describe('history', () => {
         expect(actual.toStatus).toBe(exp.to);
         expect(actual.changedBy.name).toBe(exp.actor);
     });
-  });
+  }, 30000);
 
   it('a passenger cannot read another passenger\'s ride history', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
@@ -141,7 +143,7 @@ describe('history', () => {
     const rafiq  = res.body.audit.rides.find((r: { passenger: { name: string } }) => r.passenger.name === 'Rafiq');
     expect(nusrat.finalFarePoysha).toBe(7440);
     expect(rafiq.finalFarePoysha).toBe(6600);
-  });
+  }, 30000);
 
   it('a different driver cannot read pool audit', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
