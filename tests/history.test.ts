@@ -42,7 +42,6 @@ describe('history', () => {
     return res.body.rideRequest.id as string;
   }
 
-  // ── Passenger-facing history ─────────────────────────────────────
   it('records a REQUESTED entry on creation', async () => {
     const rideId = await requestRide(nusratCookie, BANANI, MOHAKHALI);
 
@@ -111,7 +110,6 @@ describe('history', () => {
     expect(res.status).toBe(404);
   });
 
-  // ── Driver-facing pool audit ─────────────────────────────────────
   it('returns a full audit for a completed pool', async () => {
     const nusratRide = await requestRide(nusratCookie, BANANI, MOHAKHALI);
     const rafiqRide  = await requestRide(rafiqCookie,  BANANI, GULSHAN1);
@@ -150,7 +148,6 @@ describe('history', () => {
     const a = await request(app).post(`/api/v1/driver/requests/${rideId}/accept`).set('Cookie', jashimCookie);
     const poolId = a.body.pool.id;
 
-    // Sign up a fresh driver
     const signup = await request(app)
       .post('/api/v1/auth/signup')
       .send({ name: 'Intruder', email: `intruder-${Date.now()}@test.local`, password: 'password123', role: 'DRIVER' });
