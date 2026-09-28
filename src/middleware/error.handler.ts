@@ -22,7 +22,6 @@ export function errorHandler(
 ) {
   const rid = req.rid ?? 'no-rid';
 
-  // Zod validation errors 
   if (err instanceof ZodError) {
     logger.warn('error', `Validation failed: ${req.method} ${req.originalUrl}`, {
       rid,
@@ -35,7 +34,6 @@ export function errorHandler(
     });
   }
 
-  //  Known API errors (thrown via ApiError) 
   if (err instanceof ApiError) {
     logger.warn('error', `${err.code}: ${err.message}`, {
       rid,
@@ -51,7 +49,6 @@ export function errorHandler(
     });
   }
 
-  // Prisma errors (matched by name to avoid importing generated client)
   if (err && typeof err === 'object' && 'name' in err) {
     const name = String((err as { name: unknown }).name);
     if (name.startsWith('PrismaClient')) {
@@ -77,10 +74,8 @@ export function errorHandler(
     }
   }
 
-  // Truly unexpected errors — LOG EVERYTHING 
   logger.error('error', `Unhandled error on ${req.method} ${req.originalUrl}`, { rid }, err);
 
-  // In tests we want to see the full error in the response, not a generic 500.
   const isTest = process.env.NODE_ENV === 'test';
   return res.status(500).json({
     error: 'INTERNAL_ERROR',
