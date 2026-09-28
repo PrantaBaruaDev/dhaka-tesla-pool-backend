@@ -5,7 +5,6 @@ type Level = 'debug' | 'info' | 'warn' | 'error';
 
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
-// ── Level resolution ────────────────────────────────────────────────
 function resolveLevel(): Level {
   const env = process.env.LOG_LEVEL as Level | undefined;
   if (env && env in LEVELS) return env;
@@ -19,13 +18,8 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 const IS_TEST = process.env.NODE_ENV === 'test';
 const IS_DEV  = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === undefined;
 
-// Colors: on in dev and test, off in prod, off if NO_COLOR=1
 const USE_COLOR = !IS_PROD && process.env.NO_COLOR !== '1';
 
-// ── File logging rules ───────────────────────────────────────────────
-//   LOG_FILE=1  → always on
-//   LOG_FILE=0  → always off
-//   unset       → on only when NODE_ENV=development (or unset)
 const FILE_FLAG = process.env.LOG_FILE;
 const FILE_ENABLED =
   FILE_FLAG === '1' ? true :
@@ -40,13 +34,9 @@ if (FILE_ENABLED) {
   LOG_FILE = join(LOG_DIR, `${new Date().toISOString().slice(0, 10)}.log`);
 }
 
-// ── Burst tracking (for test output readability) ─────────────────────
-// In test mode, insert a blank line before a fresh group of log lines
-// so they stand out from the test framework's own output.
 let lastLogTime = 0;
 const BURST_GAP_MS = 100;
 
-// ── Colors ───────────────────────────────────────────────────────────
 const c = {
   gray:   (s: string) => (USE_COLOR ? `\x1b[90m${s}\x1b[0m` : s),
   cyan:   (s: string) => (USE_COLOR ? `\x1b[36m${s}\x1b[0m` : s),
@@ -71,7 +61,6 @@ const LEVEL_LABEL: Record<Level, string> = {
   error: 'ERROR',
 };
 
-// ── Formatting helpers ───────────────────────────────────────────────
 function timestamp(): string {
   const d = new Date();
   const hh = String(d.getHours()).padStart(2, '0');
@@ -106,14 +95,11 @@ function fmtError(err: unknown): string {
   return '\n' + lines.join('\n');
 }
 
-// Strip ANSI codes so the file is readable in any editor
 const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, '');
 
-// ── Core writer ──────────────────────────────────────────────────────
 function write(level: Level, scope: string, message: string, data?: unknown, err?: unknown): void {
   if (LEVELS[level] < MIN_LEVEL) return;
 
-  // ── Production: JSON to stdout (no file, no colors) ──
   if (IS_PROD) {
     const entry: Record<string, unknown> = {
       ts: new Date().toISOString(),
@@ -129,7 +115,6 @@ function write(level: Level, scope: string, message: string, data?: unknown, err
     return;
   }
 
-  // ── Dev + Test: colored terminal output ──
   const ts = c.gray(timestamp());
   const lvl = LEVEL_COLOR[level](LEVEL_LABEL[level]);
   const sc = c.bold(scope.padEnd(6));
@@ -138,7 +123,6 @@ function write(level: Level, scope: string, message: string, data?: unknown, err
   if (data !== undefined) line += fmtData(data);
   if (err !== undefined) line += fmtError(err);
 
-  // Burst detection: blank line before a fresh group of logs in test mode
   const now = Date.now();
   const isNewBurst = now - lastLogTime > BURST_GAP_MS;
   lastLogTime = now;
@@ -146,17 +130,15 @@ function write(level: Level, scope: string, message: string, data?: unknown, err
 
   process.stderr.write(prefix + line + '\n');
 
-  // ── File logging (dev by default, or forced via LOG_FILE=1) ──
   if (FILE_ENABLED && LOG_FILE) {
     try {
       appendFileSync(LOG_FILE, stripAnsi(line) + '\n');
     } catch {
-      // never let logging break the app
+      console.log("Internal Server Error");
     }
   }
 }
 
-// ── Public API ───────────────────────────────────────────────────────
 export const logger = {
   debug: (scope: string, message: string, data?: unknown) => write('debug', scope, message, data),
   info:  (scope: string, message: string, data?: unknown) => write('info',  scope, message, data),
