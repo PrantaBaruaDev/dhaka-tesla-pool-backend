@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { createRideSchema } from './rides.schema';
+import { createRideSchema, previewRideSchema } from './rides.schema';
 import * as ridesService from './rides.service';
 
 export async function createRideHandler(req: Request, res: Response, next: NextFunction) {
@@ -34,6 +34,29 @@ export async function cancelRideHandler(req: Request, res: Response, next: NextF
   try {
     const ride = await ridesService.cancelRide(req.params.id as string, req.user!.id);
     res.json({ rideRequest: ride });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRideHistoryHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const history = await ridesService.getRideHistory(
+      req.params.id as string,
+      req.user!.id,
+      req.user!.role,
+    );
+    res.json({ history });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function previewRideHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const input = previewRideSchema.parse(req.body);
+    const preview = await ridesService.previewRide(input);
+    res.json({ preview });
   } catch (err) {
     next(err);
   }
