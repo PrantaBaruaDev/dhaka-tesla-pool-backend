@@ -89,3 +89,12 @@ export async function poolAuditHandler(req: Request, res: Response, next: NextFu
     next(err);
   }
 }
+
+export async function passengerProfileHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const profile = await driverService.getPassengerProfile(req.user!.id, req.params.id as string);
+    res.json(profile);
+  } catch (err) {
+    next(err);
+  }
+}

@@ -10,6 +10,7 @@ import {
   completeHandler,
   poolHistoryHandler,
   poolAuditHandler,
+  passengerProfileHandler,
 } from './driver.controller';
 import { Role } from '@/../prisma/generated/prisma/enums';
 
@@ -28,3 +29,4 @@ driverRouter.get('/pools/:id/history', poolAuditHandler);
 driverRouter.post('/pools/:id/arrive', arriveHandler);
 driverRouter.post('/pools/:id/start', startHandler);
 driverRouter.post('/pools/:id/complete', completeHandler);
+driverRouter.get('/passengers/:id', passengerProfileHandler); 

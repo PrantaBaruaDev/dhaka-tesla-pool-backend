@@ -4,7 +4,7 @@ import { logger } from '../../lib/logger';
 import type { ToggleStatusInput } from './driver.schema';
 import { fareFromRoadDistance } from '../fares/fare.service';
 
-export async function getDriverTesla(driverId: string) {
+async function getDriverTesla(driverId: string) {
   const tesla = await prisma.tesla.findUnique({ where: { driverId } });
   if (!tesla) {
     throw new ApiError(404, 'TESLA_NOT_FOUND', 'No Tesla is registered for this driver.');
@@ -45,6 +45,7 @@ export async function getActivePool(driverId: string) {
     },
     include: {
       rides: {
+        where: { status: { not: 'CANCELLED' } },
         include: {
           passenger: { select: { id: true, name: true, email: true } },
           pickupZone: { select: { id: true, name: true, cluster: true } },
@@ -348,7 +349,7 @@ export async function markArrived(driverId: string, poolId: string) {
   const result = await prisma.$transaction(async (tx) => {
     const pool = await tx.pool.findUnique({
       where: { id: poolId },
-      include: { rides: true },
+      include: { rides: { where: { status: { not: 'CANCELLED' } } }, },
     });
 
     if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
@@ -392,8 +393,14 @@ export async function startPool(driverId: string, poolId: string) {
   const result = await prisma.$transaction(async (tx) => {
     const pool = await tx.pool.findUnique({
       where: { id: poolId },
-      include: { rides: true },
+      include: { 
+        rides: { where: { status: { not: 'CANCELLED' } } }, 
+      },
     });
+
+    if (pool?.rides.length === 0) {
+      throw new ApiError(409, 'EMPTY_POOL', 'All passengers have cancelled.');
+    }
 
     if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
     if (pool.teslaId !== tesla.id) {
@@ -449,7 +456,7 @@ export async function completePool(driverId: string, poolId: string) {
   const result = await prisma.$transaction(async (tx) => {
     const pool = await tx.pool.findUnique({
       where: { id: poolId },
-      include: { rides: true },
+      include: { rides: { where: { status: { not: 'CANCELLED' } } }, },
     });
 
     if (!pool) throw new ApiError(404, 'POOL_NOT_FOUND', 'Pool does not exist.');
@@ -613,6 +620,69 @@ export async function getPoolAudit(driverId: string, poolId: string) {
         },
         changedAt: t.changedAt,
       })),
+    })),
+  };
+}
+
+export async function getPassengerProfile(driverId: string, passengerId: string) {
+  const tesla = await getDriverTesla(driverId);
+
+  const passenger = await prisma.user.findUnique({
+    where: { id: passengerId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+    },
+  });
+
+  if (!passenger) {
+    throw new ApiError(404, 'PASSENGER_NOT_FOUND', 'Passenger does not exist.');
+  }
+  if (passenger.role !== 'PASSENGER') {
+    throw new ApiError(400, 'NOT_A_PASSENGER', 'This user is not a passenger.');
+  }
+
+  const rides = await prisma.rideRequest.findMany({
+    where: {
+      passengerId,
+      pool: { teslaId: tesla.id },
+    },
+    include: {
+      pickupZone: { select: { name: true } },
+      destinationZone: { select: { name: true } },
+    },
+    orderBy: { requestedAt: 'desc' },
+    take: 20,
+  });
+
+  const completed = rides.filter((r) => r.status === 'COMPLETED');
+  const totalFarePoysha = completed.reduce(
+    (sum, r) => sum + (r.finalFarePoysha ?? 0),
+    0,
+  );
+
+  return {
+    passenger: {
+      id: passenger.id,
+      name: passenger.name,
+      email: passenger.email,
+      role: passenger.role,
+      joinedAt: passenger.createdAt,
+    },
+    stats: {
+      totalRides: completed.length,
+      totalFarePoysha,
+    },
+    ridesWithYou: rides.map((r) => ({
+      rideRequestId: r.id,
+      pickupZone: r.pickupZone.name,
+      destinationZone: r.destinationZone.name,
+      status: r.status,
+      finalFarePoysha: r.finalFarePoysha,
+      requestedAt: r.requestedAt,
     })),
   };
 }
