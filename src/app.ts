@@ -34,6 +34,24 @@ app.get('/health', (_req, res) => {
     res.json({ status: 'ok', ts: new Date().toISOString() });
 });
 
+
+if (process.env.NODE_ENV === 'test') {
+  app.post('/test/reset', async (_req, res, next) => {
+    try {
+      const { prisma } = await import('./app/lib/prisma');
+      await prisma.$transaction([
+        prisma.rideStatusHistory.deleteMany({}),
+        prisma.rideRequest.deleteMany({}),
+        prisma.pool.deleteMany({}),
+        prisma.tesla.updateMany({ data: { isOnline: false } }),
+      ]);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+}
+
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/zones', zonesRouter);
 app.use('/api/v1/rides', ridesRouter);
