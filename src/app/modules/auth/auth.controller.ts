@@ -50,7 +50,12 @@ export function loginHandler(req: Request, res: Response, next: NextFunction) {
 }
 
 export function logoutHandler(_req: Request, res: Response) {
-  res.clearCookie(COOKIE_NAME, { path: '/' });
+  res.clearCookie(COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+  });
   res.status(204).send();
 }
 
