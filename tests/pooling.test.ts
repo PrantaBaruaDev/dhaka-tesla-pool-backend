@@ -12,6 +12,20 @@ async function loginAs(email: string, password: string): Promise<string> {
   return Array.isArray(cookies) ? cookies[0] : cookies;
 }
 
+async function requestRideWithSeats(
+  cookie: string,
+  pickup: string,
+  dest: string,
+  seats: number,
+) {
+  const res = await request(app)
+    .post('/api/v1/rides')
+    .set('Cookie', cookie)
+    .send({ pickupZoneId: pickup, destinationZoneId: dest, seats, paymentMethod: 'CASH' });
+  if (res.status !== 201) throw new Error(`create ride failed: ${res.status}`);
+  return res.body.rideRequest.id as string;
+}
+
 const BANANI = 'z-banani';
 const MOHAKHALI = 'z-mohakhali';
 const GULSHAN1 = 'z-gulshan1';
@@ -277,4 +291,47 @@ describe('pooling', () => {
     expect(found.status).toBe('COMPLETED');
     expect(found.passengers.length).toBe(1);
   }, 30000);
+
+  it('single passenger with 2 seats does not trigger pool discount', async () => {
+  // Nusrat books 2 seats alone
+  const rideId = await requestRideWithSeats(nusratCookie, BANANI, MOHAKHALI, 2);
+
+  const accept = await request(app)
+    .post(`/api/v1/driver/requests/${rideId}/accept`)
+    .set('Cookie', jashimCookie);
+  const poolId = accept.body.pool.id;
+
+  await request(app).post(`/api/v1/driver/pools/${poolId}/arrive`).set('Cookie', jashimCookie);
+  await request(app).post(`/api/v1/driver/pools/${poolId}/start`).set('Cookie', jashimCookie);
+  const complete = await request(app)
+    .post(`/api/v1/driver/pools/${poolId}/complete`)
+    .set('Cookie', jashimCookie);
+
+  // 2 seats × 9300 = 18600, no discount (she's the only passenger)
+  expect(complete.body.rides[0].finalFarePoysha).toBe(18600);
+  expect(complete.body.rides[0].discountPoysha).toBe(0);
+});
+
+it('single passenger with 2 seats + another passenger gets discount', async () => {
+  const ride1 = await requestRideWithSeats(nusratCookie, BANANI, MOHAKHALI, 2);
+  const ride2 = await requestRideWithSeats(rafiqCookie,  BANANI, GULSHAN1,  1);
+
+  const a = await request(app).post(`/api/v1/driver/requests/${ride1}/accept`).set('Cookie', jashimCookie);
+  const poolId = a.body.pool.id;
+  await request(app).post(`/api/v1/driver/requests/${ride2}/accept`).set('Cookie', jashimCookie);
+
+  await request(app).post(`/api/v1/driver/pools/${poolId}/arrive`).set('Cookie', jashimCookie);
+  await request(app).post(`/api/v1/driver/pools/${poolId}/start`).set('Cookie', jashimCookie);
+  const complete = await request(app)
+    .post(`/api/v1/driver/pools/${poolId}/complete`)
+    .set('Cookie', jashimCookie);
+
+  const nusrat = complete.body.rides.find((r: { id: string }) => r.id === ride1);
+  const rafiq  = complete.body.rides.find((r: { id: string }) => r.id === ride2);
+
+  // Nusrat: 2 × 9300 = 18600 → 20% off = 14880
+  expect(nusrat.finalFarePoysha).toBe(14880);
+  // Rafiq: 1 × 8250 = 8250 → 20% off = 6600
+  expect(rafiq.finalFarePoysha).toBe(6600);
+});
 });

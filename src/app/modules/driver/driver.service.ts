@@ -467,6 +467,7 @@ export async function completePool(driverId: string, poolId: string) {
       throw new ApiError(409, 'INVALID_TRANSITION', `Pool is ${pool.status}.`);
     }
 
+    const uniquePassengerIds = new Set(pool.rides.map((r) => r.passengerId));
     const isPooled = pool.seatsOccupied > 1;
 
     const updatedPool = await tx.pool.update({
@@ -478,7 +479,9 @@ export async function completePool(driverId: string, poolId: string) {
       id: string;
       passengerId: string;
       roadDistanceMeters: number;
+      seats: number;
       baseFarePoysha: number;
+      subtotalPoysha: number;
       discountPoysha: number;
       finalFarePoysha: number;
     }> = [];
@@ -486,8 +489,9 @@ export async function completePool(driverId: string, poolId: string) {
     for (const ride of pool.rides) {
       if (ride.status !== 'STARTED') continue;
 
-      const { basePoysha, discountPoysha, finalPoysha } = fareFromRoadDistance(
+      const { basePoysha, seats, subtotalPoysha, discountPoysha, finalPoysha } = fareFromRoadDistance(
         ride.roadDistanceMeters,
+        ride.seatsRequested,
         isPooled,
       );
 
@@ -513,7 +517,9 @@ export async function completePool(driverId: string, poolId: string) {
         id: ride.id,
         passengerId: ride.passengerId,
         roadDistanceMeters: ride.roadDistanceMeters,
+        seats,
         baseFarePoysha: basePoysha,
+        subtotalPoysha,
         discountPoysha,
         finalFarePoysha: finalPoysha,
       });

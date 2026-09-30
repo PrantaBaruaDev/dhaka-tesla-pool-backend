@@ -42,22 +42,27 @@ export function roadDistanceMeters(
 
 export interface FareBreakdown {
   basePoysha: number;
+  seats: number;
+  subtotalPoysha: number;
   discountPoysha: number;
   finalPoysha: number;
 }
 
 export function fareFromRoadDistance(
   roadMeters: number,
+  seats: number,
   isPooled: boolean,
 ): FareBreakdown {
   const km = roadMeters / 1000;
-  const basePoysha = BASE_FARE_POYSHA + Math.round(km * PER_KM_POYSHA);
-  const discountPoysha = isPooled
-    ? Math.round(basePoysha * POOL_DISCOUNT)
-    : 0;
+  const perSeat = BASE_FARE_POYSHA + Math.round(km * PER_KM_POYSHA);
+  const subtotal = perSeat * seats;
+  const discount = isPooled ? Math.round(subtotal * POOL_DISCOUNT) : 0;
+
   return {
-    basePoysha,
-    discountPoysha,
-    finalPoysha: basePoysha - discountPoysha,
+    basePoysha: perSeat,
+    seats,
+    subtotalPoysha: subtotal,
+    discountPoysha: discount,
+    finalPoysha: subtotal - discount,
   };
 }

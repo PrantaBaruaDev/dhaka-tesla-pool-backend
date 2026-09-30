@@ -34,7 +34,7 @@ export async function createRide(passengerId: string, input: CreateRideInput) {
   const straight = haversineMeters(pickupZone.lat, pickupZone.lng, destZone.lat, destZone.lng);
   const road = roadDistanceMeters(pickupZone.lat, pickupZone.lng, destZone.lat, destZone.lng);
 
-  const { finalPoysha: estimatedFare } = fareFromRoadDistance(road, false);
+  const fare = fareFromRoadDistance(road, input.seats, false);
 
   const ride = await prisma.$transaction(async (tx) => {
     const created = await tx.rideRequest.create({
@@ -46,7 +46,7 @@ export async function createRide(passengerId: string, input: CreateRideInput) {
         status: 'REQUESTED',
         straightLineMeters: straight,
         roadDistanceMeters: road,
-        estimatedFarePoysha: estimatedFare,
+        estimatedFarePoysha: fare.finalPoysha,
         paymentMethod: input.paymentMethod,
       },
       include: {
@@ -70,12 +70,19 @@ export async function createRide(passengerId: string, input: CreateRideInput) {
   logger.info('rides', 'created', {
     rideId: ride.id,
     passengerId,
+    seats: input.seats,
     straight,
     road,
-    estimatedFare,
+    perSeat: fare.basePoysha,
+    subtotal: fare.subtotalPoysha,
+    estimatedFare: fare.finalPoysha,
   });
 
-  return ride;
+  return {
+    ...ride,
+    perSeatFarePoysha: fare.basePoysha,
+    subtotalFarePoysha: fare.subtotalPoysha,
+  };
 }
 
 export async function getMyRides(passengerId: string) {
@@ -220,21 +227,31 @@ export async function getRideHistory(rideId: string, userId: string, role: strin
   };
 }
 
-export async function previewRide(input: { pickupZoneId: string; destinationZoneId: string; seats: number }) {
+export async function previewRide(input: {
+  pickupZoneId: string;
+  destinationZoneId: string;
+  seats: number;
+}) {
   const [pickupZone, destZone] = await Promise.all([
     prisma.zone.findUnique({ where: { id: input.pickupZoneId } }),
     prisma.zone.findUnique({ where: { id: input.destinationZoneId } }),
   ]);
 
-  if (!pickupZone) throw new ApiError(404, 'ZONE_NOT_FOUND', `Pickup zone ${input.pickupZoneId} does not exist.`);
-  if (!destZone) throw new ApiError(404, 'ZONE_NOT_FOUND', `Destination zone ${input.destinationZoneId} does not exist.`);
+  if (!pickupZone) {
+    throw new ApiError(404, 'ZONE_NOT_FOUND', `Pickup zone ${input.pickupZoneId} does not exist.`);
+  }
+  if (!destZone) {
+    throw new ApiError(404, 'ZONE_NOT_FOUND', `Destination zone ${input.destinationZoneId} does not exist.`);
+  }
   if (pickupZone.id === destZone.id) {
     throw new ApiError(400, 'SAME_ZONE', 'Pickup and destination zones must be different.');
   }
 
   const straight = haversineMeters(pickupZone.lat, pickupZone.lng, destZone.lat, destZone.lng);
   const road = roadDistanceMeters(pickupZone.lat, pickupZone.lng, destZone.lat, destZone.lng);
-  const { finalPoysha: estimatedFare } = fareFromRoadDistance(road, false);
+
+  const perSeat = fareFromRoadDistance(road, 1, false);
+  const total = fareFromRoadDistance(road, input.seats, false);
 
   return {
     pickupZone: { id: pickupZone.id, name: pickupZone.name },
@@ -242,6 +259,8 @@ export async function previewRide(input: { pickupZoneId: string; destinationZone
     seats: input.seats,
     straightLineMeters: straight,
     roadDistanceMeters: road,
-    estimatedFarePoysha: estimatedFare,
+    perSeatFarePoysha: perSeat.finalPoysha,
+    subtotalPoysha: total.subtotalPoysha,
+    estimatedFarePoysha: total.finalPoysha,
   };
 }

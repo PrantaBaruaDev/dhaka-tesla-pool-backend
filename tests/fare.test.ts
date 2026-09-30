@@ -44,19 +44,19 @@ describe('fare service', () => {
   });
 
   it('Nusrat solo fare (4.2 km) is 9300 poysha', () => {
-    expect(fareFromRoadDistance(4200, false).finalPoysha).toBe(9300);
+    expect(fareFromRoadDistance(4200, 1, false).finalPoysha).toBe(9300);
   });
 
   it('Nusrat pooled fare (4.2 km) is 7440 poysha', () => {
-    expect(fareFromRoadDistance(4200, true).finalPoysha).toBe(7440);
+    expect(fareFromRoadDistance(4200, 1, true).finalPoysha).toBe(7440);
   });
 
   it('Rafiq solo fare (3.5 km) is 8250 poysha', () => {
-    expect(fareFromRoadDistance(3500, false).finalPoysha).toBe(8250);
+    expect(fareFromRoadDistance(3500, 1, false).finalPoysha).toBe(8250);
   });
 
   it('Rafiq pooled fare (3.5 km) is 6600 poysha', () => {
-    expect(fareFromRoadDistance(3500, true).finalPoysha).toBe(6600);
+    expect(fareFromRoadDistance(3500, 1, true).finalPoysha).toBe(6600);
   });
 
   it('throws when computed distance exceeds MAX_DHAKA_DISTANCE_M', () => {
@@ -64,5 +64,18 @@ describe('fare service', () => {
     expect(() =>
       roadDistanceMeters(23.8103, 90.4125, 22.3569, 91.7832),
     ).toThrow(new RegExp(`MAX_DHAKA_DISTANCE_M`));
+  });
+
+  it('2 seats double the fare (no discount, solo booking)', () => {
+    expect(fareFromRoadDistance(4200, 2, false).finalPoysha).toBe(18600);
+  });
+
+  it('3 seats triple the fare (no discount, solo booking)', () => {
+    expect(fareFromRoadDistance(4200, 3, false).finalPoysha).toBe(27900);
+  });
+
+  it('2 seats with pool discount are 20% off the 2-seat subtotal', () => {
+    expect(fareFromRoadDistance(4200, 2, true).finalPoysha).toBe(14880);
+    // 18600 × 0.8 = 14880
   });
 });
