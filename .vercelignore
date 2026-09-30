@@ -1,0 +1,48 @@
+README.md
+tsconfig.json
+tsup.config.ts
+.vercelignore
+.vscode
+docs/
+src/
+
+# Dependencies (Vercel installs these)
+node_modules/
+
+# Build output (Vercel rebuilds from source)
+.next/
+out/
+build/
+
+
+# Environment files (secrets) 
+.env
+.env.*
+!.env.example
+
+# E2E tests (not needed for deploy) 
+e2e/
+playwright.config.ts
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Logs 
+logs/
+*.log
+
+# Docker files (Vercel doesn't use these)
+Dockerfile
+Dockerfile.vercel
+.dockerignore
+
+# Editor / OS noise 
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Git metadata 
+.git/
+.gitignore

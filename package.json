@@ -17,14 +17,16 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "prisma": "^7.10.0",
-    "supertest": "^7.3.0"
+    "supertest": "^7.3.0",
+    "tsup": "^8.5.1"
   },
   "peerDependencies": {
     "typescript": "^7.0.2"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",
-    "start": "bun src/server.ts",
+    "build": "tsup",
+    "start": "bun dist/server.js",
     "test": "bun test",
     "db:generate": "bunx prisma generate",
     "db:migrate": "bunx prisma migrate dev",
