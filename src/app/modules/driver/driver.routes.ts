@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../../../middleware/auth.guard';
+import { auth } from '../../../middleware/auth';
 import {
   toggleStatusHandler,
   listRequestsHandler,
@@ -16,17 +16,14 @@ import { Role } from '@/../prisma/generated/prisma/enums';
 
 export const driverRouter = Router();
 
-driverRouter.use(requireAuth);
-driverRouter.use(requireRole(Role.DRIVER));
+driverRouter.post('/status', auth(Role.DRIVER), toggleStatusHandler);
+driverRouter.get('/requests', auth(Role.DRIVER), listRequestsHandler);
+driverRouter.post('/requests/:id/accept', auth(Role.DRIVER), acceptRequestHandler);
 
-driverRouter.post('/status', toggleStatusHandler);
-driverRouter.get('/requests', listRequestsHandler);
-driverRouter.post('/requests/:id/accept', acceptRequestHandler);
-
-driverRouter.get('/pools/active', getActivePoolHandler);
-driverRouter.get('/pools/history', poolHistoryHandler);
-driverRouter.get('/pools/:id/history', poolAuditHandler); 
-driverRouter.post('/pools/:id/arrive', arriveHandler);
-driverRouter.post('/pools/:id/start', startHandler);
-driverRouter.post('/pools/:id/complete', completeHandler);
-driverRouter.get('/passengers/:id', passengerProfileHandler); 
+driverRouter.get('/pools/active', auth(Role.DRIVER), getActivePoolHandler);
+driverRouter.get('/pools/history', auth(Role.DRIVER), poolHistoryHandler);
+driverRouter.get('/pools/:id/history', auth(Role.DRIVER), poolAuditHandler); 
+driverRouter.post('/pools/:id/arrive', auth(Role.DRIVER), arriveHandler);
+driverRouter.post('/pools/:id/start', auth(Role.DRIVER), startHandler);
+driverRouter.post('/pools/:id/complete', auth(Role.DRIVER), completeHandler);
+driverRouter.get('/passengers/:id', auth(Role.DRIVER), passengerProfileHandler); 
