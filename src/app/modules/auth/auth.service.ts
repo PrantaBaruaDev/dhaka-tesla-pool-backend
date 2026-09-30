@@ -1,11 +1,9 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../../middleware/error.handler';
-import config from '../../config';
 import type { SignupInput, LoginInput } from './auth.schema';
 import { jwtUtils } from '../../utils/jwt';
-import type { Role } from '../../../../prisma/generated/prisma/enums';
+import { Role } from '../../../../prisma/generated/prisma/enums';
 
 export const COOKIE_NAME = 'access_token';
 
@@ -28,7 +26,7 @@ export async function signup(input: SignupInput) {
     select: { id: true, name: true, email: true, role: true, createdAt: true },
   });
 
-  if (user.role === 'DRIVER') {
+  if (user.role === Role.DRIVER) {
     await prisma.tesla.create({
       data: { driverId: user.id, label: 'Tesla', capacity: 3, isOnline: false },
     });
@@ -56,6 +54,7 @@ export async function login(input: LoginInput) {
     name: user.name,
     role: user.role,
   });
+
   return {
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
     token,

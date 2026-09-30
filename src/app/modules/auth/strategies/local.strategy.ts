@@ -6,7 +6,12 @@ export const localStrategy = new LocalStrategy(
   async (email, password, done) => {
     try {
       const { user } = await login({ email, password });
-      return done(null, { id: user.id, role: user.role });
+      return done(null, {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
     } catch (err) {
       return done(err, false);
     }

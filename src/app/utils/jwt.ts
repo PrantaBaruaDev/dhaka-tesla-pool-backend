@@ -1,15 +1,16 @@
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import config from '../config';
+import type { Role } from '@/../prisma/generated/prisma/enums';
 
 export interface JwtUserPayload extends JwtPayload {
   userId: string;
   email: string;
   name: string;
-  role: 'PASSENGER' | 'DRIVER';
+  role: Role;
 }
 
 export const jwtUtils = {
-  signToken(payload: Omit<JwtUserPayload, 'iat' | 'exp'>): string {
+  signToken(payload: { userId: string; email: string; name: string; role: Role }): string {
     return jwt.sign(payload, config.jwt_access_secret, {
       expiresIn: config.jwt_access_expires_in as any,
     });
@@ -22,10 +23,7 @@ export const jwtUtils = {
       const decoded = jwt.verify(token, config.jwt_access_secret) as JwtUserPayload;
       return { success: true, data: decoded };
     } catch (err) {
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Invalid token',
-      };
+      return { success: false, error: err instanceof Error ? err.message : 'Invalid token' };
     }
   },
 };
