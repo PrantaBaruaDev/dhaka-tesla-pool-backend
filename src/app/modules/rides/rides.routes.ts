@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../../../middleware/auth.guard';
+import { auth } from '../../../middleware/auth';
 import {
   createRideHandler,
   listMyRidesHandler,
@@ -12,13 +12,10 @@ import { Role } from '@/../prisma/generated/prisma/enums';
 
 export const ridesRouter = Router();
 
-ridesRouter.use(requireAuth);
-ridesRouter.use(requireRole(Role.PASSENGER));
-
-ridesRouter.post('/preview', previewRideHandler);
-ridesRouter.post('/', createRideHandler);
-ridesRouter.get('/me', listMyRidesHandler);
-ridesRouter.get('/:id/history', getRideHistoryHandler);
-ridesRouter.get('/:id', getRideHandler);
-ridesRouter.post('/:id/cancel', cancelRideHandler);
+ridesRouter.post('/preview', auth(Role.PASSENGER), previewRideHandler);
+ridesRouter.post('/', auth(Role.PASSENGER), createRideHandler);
+ridesRouter.get('/me', auth(Role.PASSENGER), listMyRidesHandler);
+ridesRouter.get('/:id/history', auth(Role.PASSENGER), getRideHistoryHandler);
+ridesRouter.get('/:id', auth(Role.PASSENGER), getRideHandler);
+ridesRouter.post('/:id/cancel', auth(Role.PASSENGER), cancelRideHandler);
 

@@ -4,11 +4,18 @@ import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../../middleware/error.handler';
 import config from '../../config';
 import type { SignupInput, LoginInput } from './auth.schema';
+import { jwtUtils } from '../../utils/jwt';
+import type { Role } from '../../../../prisma/generated/prisma/enums';
 
 export const COOKIE_NAME = 'access_token';
 
-export function signToken(payload: { sub: string; role: string }): string {
-  return jwt.sign(payload, config.jwt_access_secret, { expiresIn: config.jwt_access_expires_in as any });
+export function signToken(payload: {
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+}): string {
+  return jwtUtils.signToken(payload);
 }
 
 export async function signup(input: SignupInput) {
@@ -27,7 +34,12 @@ export async function signup(input: SignupInput) {
     });
   }
 
-  const token = signToken({ sub: user.id, role: user.role });
+  const token = signToken({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  });
   return { user, token };
 }
 
@@ -38,7 +50,12 @@ export async function login(input: LoginInput) {
   const ok = await bcrypt.compare(input.password, user.passwordHash);
   if (!ok) throw new ApiError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.');
 
-  const token = signToken({ sub: user.id, role: user.role });
+  const token = signToken({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+  });
   return {
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
     token,

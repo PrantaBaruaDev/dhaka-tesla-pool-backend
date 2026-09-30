@@ -18,7 +18,7 @@ export async function signupHandler(req: Request, res: Response, next: NextFunct
     const input = signupSchema.parse(req.body);
     const { user, token } = await authService.signup(input);
     res.cookie(COOKIE_NAME, token, cookieOptions);
-    res.status(201).json({ user });
+    res.status(201).json({ user, token });
   } catch (err) {
     next(err);
   }
@@ -35,11 +35,16 @@ export function loginHandler(req: Request, res: Response, next: NextFunction) {
     if (err) return next(err);
     if (!user) return next(new ApiError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.'));
 
-    const token = authService.signToken({ sub: user.id, role: user.role });
+    const token = authService.signToken({
+      userId: user.userId,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    });
     res.cookie(COOKIE_NAME, token, cookieOptions);
     authService
-      .me(user.id)
-      .then((full) => res.json({ user: full }))
+      .me(user.userId)
+      .then((full) => res.json({ user: full, token }))
       .catch(next);
   })(req, res, next);
 }
@@ -51,7 +56,7 @@ export function logoutHandler(_req: Request, res: Response) {
 
 export async function meHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = await authService.me(req.user!.id);
+    const user = await authService.me(req.user!.userId);
     res.json({ user });
   } catch (err) {
     next(err);

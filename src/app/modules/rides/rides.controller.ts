@@ -5,7 +5,7 @@ import * as ridesService from './rides.service';
 export async function createRideHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const input = createRideSchema.parse(req.body);
-    const ride = await ridesService.createRide(req.user!.id, input);
+    const ride = await ridesService.createRide(req.user!.userId, input);
     res.status(201).json({ rideRequest: ride });
   } catch (err) {
     next(err);
@@ -14,7 +14,7 @@ export async function createRideHandler(req: Request, res: Response, next: NextF
 
 export async function listMyRidesHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const rides = await ridesService.getMyRides(req.user!.id);
+    const rides = await ridesService.getMyRides(req.user!.userId);
     res.json({ rides });
   } catch (err) {
     next(err);
@@ -23,7 +23,7 @@ export async function listMyRidesHandler(req: Request, res: Response, next: Next
 
 export async function getRideHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const ride = await ridesService.getRideById(req.params.id as string, req.user!.id, req.user!.role);
+    const ride = await ridesService.getRideById(req.params.id as string, req.user!.userId, req.user!.role);
     res.json({ rideRequest: ride });
   } catch (err) {
     next(err);
@@ -32,7 +32,7 @@ export async function getRideHandler(req: Request, res: Response, next: NextFunc
 
 export async function cancelRideHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const ride = await ridesService.cancelRide(req.params.id as string, req.user!.id);
+    const ride = await ridesService.cancelRide(req.params.id as string, req.user!.userId);
     res.json({ rideRequest: ride });
   } catch (err) {
     next(err);
@@ -43,7 +43,7 @@ export async function getRideHistoryHandler(req: Request, res: Response, next: N
   try {
     const history = await ridesService.getRideHistory(
       req.params.id as string,
-      req.user!.id,
+      req.user!.userId,
       req.user!.role,
     );
     res.json({ history });
