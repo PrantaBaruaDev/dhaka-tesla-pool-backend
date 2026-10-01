@@ -58,6 +58,37 @@ export async function getActivePool(driverId: string) {
 
   if (!pool) return null;
 
+  const uniquePassengerIds = new Set(pool.rides.map((r) => r.passengerId));
+  const isPooled = uniquePassengerIds.size > 1;
+  const discountPercent = isPooled ? 20 : 0;
+
+  let projectedTotalPoysha = 0;
+
+  const passengers = pool.rides.map((r) => {
+    const fare = fareFromRoadDistance(
+      r.roadDistanceMeters,
+      r.seatsRequested,
+      isPooled,
+    );
+    projectedTotalPoysha += fare.finalPoysha;
+
+    return {
+      rideRequestId: r.id,
+      passengerId: r.passengerId,
+      passengerName: r.passenger.name,
+      passengerEmail: r.passenger.email,
+      seats: r.seatsRequested,
+      status: r.status,
+      pickupZone: r.pickupZone,
+      destinationZone: r.destinationZone,
+      estimatedFarePoysha: r.estimatedFarePoysha,
+      perSeatFarePoysha: fare.basePoysha,
+      subtotalPoysha: fare.subtotalPoysha,
+      discountPoysha: fare.discountPoysha,
+      projectedFarePoysha: fare.finalPoysha,
+    };
+  });
+
   return {
     id: pool.id,
     status: pool.status,
@@ -66,16 +97,7 @@ export async function getActivePool(driverId: string) {
     version: pool.version,
     startedAt: pool.startedAt,
     completedAt: pool.completedAt,
-    passengers: pool.rides.map((r) => ({
-      rideRequestId: r.id,
-      passengerId: r.passengerId,
-      passengerName: r.passenger.name,
-      seats: r.seatsRequested,
-      status: r.status,
-      pickupZone: r.pickupZone,
-      destinationZone: r.destinationZone,
-      estimatedFarePoysha: r.estimatedFarePoysha,
-    })),
+    passengers,
   };
 }
 
